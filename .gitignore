@@ -1,0 +1,10 @@
+# Files listed here are not tracked by git and should not be placed in the hub.  
+# More information on syntax can be found http://book.git-scm.com/4_ignoring_files.html
+# 
+# Don't track our uploaded images and files
+files/*
+#
+# Don't track our settings.php file, it has the our passwords in it and should NEVER
+# be pushed to the git hub
+#
+sites/*/settings.php

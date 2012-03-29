@@ -1,0 +1,225 @@
+<?php
+/**
+ * @file field_convert.module
+ * 
+ * This is a framework to support contrib modules' migration to D7 FieldAPI.
+ *
+ * The idea is that you define migration plans which can then be selected in an
+ * admin UI and run as a batch.
+ *
+ * Each plan defines: 
+ *  - what fields and field instances to create
+ *  - how to load the objects to manipulate: which objects they are (eg users,
+ *    nodes) and which of these to look at (eg, only certain roles or types)
+ *  - how to transfer data in a loaded object from one lot of object properties
+ *    to another.
+ *    Eg your custom module might load stuff into $node->myprop, and this 
+ *    should go into $node->field_new_field.
+ *
+ * You also need to implement a hook to load your custom data into the object.
+ * For nodes, this will mean reimplementing your D6 hook_load() or
+ * hook_nodeapi() 'load' op.
+ *
+ * Parts of this are not yet implemented although support for them is in the
+ * plan definition.
+ * If your module needs a particular feature for its conversion, please file an
+ * issue or better still a patch ;)
+ */
+
+/**
+ * Implementation of hook_menu().
+ */
+function field_convert_menu() { 
+  $items['admin/content/field_convert'] = array(
+    'title' => 'Convert fields',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('field_convert_select'),
+    'access arguments' => array('administer software updates'), // @TODO CHANGE ME
+    'file' => 'field_convert.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Helper function for debugging: retrieve a named plan and prepare it.
+ */
+function _field_convert_get_prepared_plan($plan_name) {
+  module_load_include('inc', 'field_convert', 'field_convert.admin'); 
+  $conversion_plans = _field_convert_get_plans();
+  $plan = $conversion_plans[$plan_name];
+  _field_convert_prepare_plan($plan);
+  
+  return $plan;
+}
+
+/**
+ * Implement hook_field_convert_info().
+ *
+ * Return an array describing field migration plans.
+ *
+ * This is a dummy implementation on system.module so we get it regardless.
+ */ 
+function system_field_convert_info() {
+  /*
+  DEMO PLAN!
+  
+  This is a demo plan that will move data from a fictitious table
+  {article_custom_field} into a new FieldAPI numeric field on article nodes.
+  
+  To test it, create the table {article_custom_field} with fields (nid, data),
+  and populate it with a few values for your existing article nodes.
+  
+  */
+  return array(
+    'article_numeric_demo' => array(
+      // Basics about this field migration plan
+      'title' => t('Article field demo'),
+      'description' => t('DEMO: converts an article field in a fictitious table to a numberfield.'),
+      // Required modules for this plan.
+      'dependencies' => array(
+        // 'image_attach',
+        // 'image',
+      ),
+      // The entity type that this plan operates on
+      // eg 'node', 'user', 'comment'.
+      // Information about this type will be retrieved from hook_entity_info(). 
+      'entity_type' => 'node',
+      
+      // How to determine if this plan has run or not.
+      'has_run' => array(
+        // Simple form: give the name of a table which exists if the plan has
+        // not run yet (and therefore which the plan should rename as part of
+        // its work).
+        'table_exists' => 'article_custom_field',
+        // @todo: allow a full query to be specified here for complex cases.
+      ),
+      
+      // The fields we will need to create or use.
+      // An array of one or more fields and instances
+      // The key is not used, but field name is nice though.
+      'fields' => array(
+        'article_number' => array(
+          // Whether we need to create a new field and instances or not.
+          // one of:
+          //  - create // create the field and instances 
+          //  - create instance // the field exists; create one or more instances of it
+          //  - exists // the field and instance already exist. @TODO: add support for this!
+          'status'      => 'create',
+
+          // Information about the field to create.
+          // This is a standard FieldAPI array suitable for passing to field_create_field().
+          // @see <http://drupal.org/node/474420>.
+          // Some useful information can be got from: 
+          // $field_type_options = field_ui_field_type_options();
+          'field' => array(
+            'field_name'  => 'article_number',
+            'type'        => 'number_integer',
+            'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+            'settings'    => array(
+              'required'  => FALSE,
+              //'allowed_values'  => array(),
+            ),
+          ),
+
+          // Information about the instances to create.
+          // An array of one or more instances of this field, 
+          // keyed by whatever you like.
+          'instances' => array(
+            // This is a standard FieldAPI array suitable for passing to
+            // field_create_instance(), though note that the 'entity_type' and
+            // 'field_name' keys are filled in for you.
+            // Some useful information can be got from: 
+            // $widget_type_options = field_ui_widget_type_options(NULL, TRUE);
+            'all' => array(
+              'label'       => t('Number'),
+              'description' => t('A number field.'),
+              'widget'      => array(
+                'type'      => 'number',
+                'weight'    => 10,
+              ),
+              // You may define either the standard 'bundle' key to create the
+              // instance on only one bundle or use this shorthand to define
+              // several instances at once.
+              'bundles' => array(
+                'article',
+              ),
+            ),
+          ),
+        ),
+        // Add more fields here
+      ),
+      
+      // How to get all the objects we need to operate on
+      'list' => array(
+        'query_method' => 'dynamic', // DBTNG baby! 
+        // @todo: support static queries too?
+        'query' => array(
+          // this is an array of stuff to build the query object with
+          // we'll use the standard abbreviation of the first letter of 
+          // the base table.
+          'conditions' => array(
+            // arrays of parameters suitable for passing to the $query as conditions
+            // each array here is passed as $query->([the array])
+            array('n.type', 'article', '='),
+          ),
+          /*
+          'fields' => array('wackyfield'), 
+          // If your loader needs extra fields, list them here. The id field is included automatically.
+          // @todo: is this needed?
+          */
+        ),
+      ),
+      
+      // How to load each object we manipulate.
+      // @todo: we can maybe omit this entire section and just assume the entity_load() function?
+      'load' => array(
+        'load_method' => 'entity', 
+        // can be one of:
+        // - entity: use the core entity_load() function. In which case, specify 'conditions' to pass.
+        // - callback: use your own function. specify the 'load_callback' and 'load_arguments'
+        // - query: specify a query in 'query'. eg:
+        // 'query' => "SELECT nid FROM {node} WHERE nid > %d AND type = 'article' ORDER BY nid ASC",
+        // the query that loads us the objects we need
+      ),
+      
+      // How to manipulate each object: take values from one property and put them in another.
+      'manipulate' => array(
+        // hook_field_convert_load() is called on each object.
+        'property_conversions' => array(
+          // An array of property conversions.
+          // Simple version:
+          // 'old_property' => 'new_property'
+          // take data from old_property and put it into new_property. 
+          // if 'old_property' is an array, each value is taken to be a value for a multi-valued field.
+          // (you DID define your field as multivalued, yes?)
+          // new_property should be the base property for the FieldAPI field.
+          // The system will take care of the array structure beneath this.
+          array('article_custom_field' => 'article_number'),
+          // @todo: think about what more complex cases might need: 
+          // a callback, for instance in which case the key is just a key, 
+          // and the value is an array of stuff.
+        ),
+        // 'post_process' => optional callback to run after manipulation. Use this to tidy up data, move files, etc.
+      ),
+      
+      // How to save the entity once we are done.
+      'save' => 'node_save', 
+      // @todo: assume this is ENTITYTYPE_save unless specified?
+      // Note: users are a special case!
+      
+    ),
+  );
+}
+
+/**
+ * Demo pre_process function for the demo plan above
+ */
+function article_custom_field_migrate_pre_process(&$object) {
+  $result = db_query("SELECT data FROM {article_custom_field} WHERE nid = :nid", array(':nid' => $object->nid));
+  $record = $result->fetchField();
+   
+  $object->article_custom_field = $record;
+}
+
+

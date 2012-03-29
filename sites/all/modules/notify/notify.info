@@ -1,0 +1,11 @@
+name = Notify
+description = "Enables notifications of new content and comments by e-mail."
+package = Mail
+core = 7.x
+
+; Information added by drupal.org packaging script on 2011-07-24
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "notify"
+datestamp = "1311467830"
+
