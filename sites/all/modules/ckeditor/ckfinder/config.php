@@ -35,8 +35,8 @@ function CheckAuthentication()
 
 // LicenseKey : Paste your license key here. If left blank, CKFinder will be
 // fully functional, in demo mode.
-$config['LicenseName'] = '';
-$config['LicenseKey'] = '';
+$config['LicenseName'] = 'thesynapticleap.org';
+$config['LicenseKey'] = '7N39-6494-NL72-RLRD-NSL9-XBKR-47J2';
 
 /*
  Uncomment lines below to enable PHP error reporting and displaying PHP errors.
