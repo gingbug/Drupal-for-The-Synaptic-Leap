@@ -3,8 +3,16 @@
 # 
 # Don't track our uploaded images and files
 files/*
+userfiles/*
+#
+# Don't track mac file system files
+#
+*.DS_Store
 #
 # Don't track our settings.php file, it has the our passwords in it and should NEVER
 # be pushed to the git hub
 #
 sites/*/settings.php
+#
+# Don't track a apache test file
+index.html
