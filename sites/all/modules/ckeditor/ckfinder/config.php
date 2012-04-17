@@ -18,7 +18,7 @@
  *
  * @return boolean
  */
-function CheckAuthentication()
+/** function CheckAuthentication()
 {
 	// WARNING : DO NOT simply return "true". By doing so, you are allowing
 	// "anyone" to upload and list the files in your server. You must implement
@@ -32,6 +32,7 @@ function CheckAuthentication()
 
 	return false;
 }
+**/
 
 // LicenseKey : Paste your license key here. If left blank, CKFinder will be
 // fully functional, in demo mode.
@@ -80,6 +81,7 @@ Examples:
 ATTENTION: The trailing slash is required.
 */
 $baseDir = resolveUrl($baseUrl);
+require_once '../../../../includes/filemanager.config.php';
 
 /*
  * ### Advanced Settings
