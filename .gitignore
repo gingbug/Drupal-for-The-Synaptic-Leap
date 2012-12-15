@@ -16,3 +16,6 @@ sites/*/settings.php
 #
 # Don't track a apache test file
 index.html
+
+# Netbeans project directory
+nbproject/
