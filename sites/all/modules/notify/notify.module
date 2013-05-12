@@ -190,7 +190,7 @@ function _notify_count_nodes() {
   // Build query to fetch desired nodes.
   $q = db_select('node', 'n');
   $q->fields('n', array('nid'));
-  $q->condition('status', 1);
+  $q->condition('status', NODE_PUBLISHED);
   if (count($ntype) >= 1) {
     $q->condition('n.type', $ntype, 'IN');
   }
@@ -206,12 +206,15 @@ function _notify_count_nodes() {
   $result = $q->execute();
   $nodes = $result->rowCount();
 
-  // Fetch new comments.
+  // Fetch new published comments.
   $comments = array();
   if (module_exists('comment')) {
     $q = db_select('comment', 'c');
     $q->join('node', 'n', 'c.nid = n.nid');
+    $q->leftJoin('notify_unpublished_comments_queue', 'q', 'q.cid = c.cid');
     $q->fields('c');
+    $q->condition('c.status', COMMENT_PUBLISHED, '=');
+    $q->condition('q.cid', '', 'IS NULL');
     if (count($ntype) >= 1) {
       $q->condition('n.type', $ntype, 'IN');
     }
@@ -228,6 +231,13 @@ function _notify_count_nodes() {
     $cresult = $q->execute();
     $comments = $cresult->rowCount();
 
+    // Add any comments that are now published but still in the queue.
+    $result = db_query("SELECT 1
+      FROM {comment} c
+      INNER JOIN {notify_unpublished_comments_queue} q ON q.cid = c.cid
+      WHERE c.status = :status", array(':status' => COMMENT_PUBLISHED));
+
+    $comments += $result->rowCount();
   }
 
   return array($nodes, $comments);
@@ -821,7 +831,7 @@ function _notify_send($send_start = NULL) {
   // Build query to fetch desired nodes.
   $q = db_select('node', 'n');
   $q->fields('n', array('nid'));
-  $q->condition('status', 1);
+  $q->condition('status', NODE_PUBLISHED);
   if (count($ntype) >= 1) {
     $q->condition('n.type', $ntype, 'IN');
   }
@@ -845,12 +855,17 @@ function _notify_send($send_start = NULL) {
     $nodes[$node->nid] = node_load($node->nid);
   }
 
-  // Fetch new comments.
+  // Fetch new published comments.
   $comments = array();
   if (module_exists('comment')) {
+    _notify_queue_unpublished_comments();
+
     $q = db_select('comment', 'c');
     $q->join('node', 'n', 'c.nid = n.nid');
+    $q->leftJoin('notify_unpublished_comments_queue', 'q', 'q.cid = c.cid');
     $q->fields('c');
+    $q->condition('c.status', COMMENT_PUBLISHED, '=');
+    $q->condition('q.cid', '', 'IS NULL');
     if (count($ntype) >= 1) {
       $q->condition('n.type', $ntype, 'IN');
     }
@@ -869,6 +884,21 @@ function _notify_send($send_start = NULL) {
     foreach ($cresult as $comment) {
       $comments[$comment->nid][] = $comment;
     }
+
+    // Add any comments that have been published since they were added to the queue.
+    $result = db_query("SELECT c.*
+      FROM {comment} c
+      INNER JOIN {notify_unpublished_comments_queue} q ON q.cid = c.cid
+      WHERE c.status = :status", array(':status' => COMMENT_PUBLISHED));
+
+    foreach ($result as $comment) {
+      $comments[$comment->nid][] = $comment;
+    }
+
+    db_query("DELETE q
+      FROM {notify_unpublished_comments_queue} q
+      INNER JOIN {comment} c ON c.cid = q.cid
+      WHERE c.status = :status", array(':status' => COMMENT_PUBLISHED));
   }
 
   if (count($nodes) || count($comments)) {
@@ -1091,5 +1121,38 @@ function _notify_switch_user($uid = NULL) {
   // Store the initial user.
   else {
     $orig_user[] = $user;
+  }
+}
+
+/**
+ * Helper function that queues any unpublished comments so
+ * users can be notified when the comments are published.
+ */
+function _notify_queue_unpublished_comments() {
+  db_query("INSERT INTO {notify_unpublished_comments_queue} (cid, nid)
+    SELECT c.cid, c.nid
+    FROM {comment} c
+    LEFT JOIN {notify_unpublished_comments_queue} q ON q.cid = c.cid
+    WHERE c.status = :status AND q.cid IS NULL", array(':status' => COMMENT_NOT_PUBLISHED));
+}
+
+/**
+ * Implementation of hook_node_delete().
+ *
+ * Delete any unpublished comments in the queue associated
+ * with the node being deleted.
+ */
+function notify_node_delete($node) {
+  db_query('DELETE FROM {notify_unpublished_comments_queue} WHERE nid = :nid', array(':nid' => $node->nid));
+}
+
+/**
+ * Implementation of hook_comment_insert().
+ *
+ * Add any newly created unpublished comments to the queue.
+ */
+function notify_comment_insert($comment) {
+  if ($comment->status == COMMENT_NOT_PUBLISHED) {
+    db_query('INSERT INTO {notify_unpublished_comments_queue} (cid, nid) VALUES (:cid, :nid)', array(':cid' => $comment->cid, ':nid' => $comment->nid));
   }
 }

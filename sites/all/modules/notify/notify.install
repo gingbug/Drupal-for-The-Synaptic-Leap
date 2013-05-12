@@ -57,6 +57,25 @@ function notify_schema() {
     'primary key' => array('uid'),
   );
 
+  $schema['notify_unpublished_comments_queue'] = array(
+    'description' => 'Stores list of unpublished comments to determine which comments have since been published when sending out notifications.',
+    'fields' => array(
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {comment}.cid of the unpublished comment.',
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {node}.nid to which this comment is a reply.',
+      ),
+    ),
+    'primary key' => array('cid'),
+  );
+
   return $schema;
 }
 
@@ -71,4 +90,30 @@ function notify_uninstall() {
   ->execute();
   cache_clear_all('variables', 'cache');
   unset($conf);
+}
+
+/**
+ * Add notify_unpublished_comments_queue table.
+ */
+function notify_update_7001() {
+  $schema['notify_unpublished_comments_queue'] = array(
+    'description' => 'Stores list of unpublished comments to determine which comments have since been published when sending out notifications.',
+    'fields' => array(
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {comment}.cid of the unpublished comment.',
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {node}.nid to which this comment is a reply.',
+      ),
+    ),
+    'primary key' => array('cid'),
+  );
+
+  db_create_table('notify_unpublished_comments_queue', $schema['notify_unpublished_comments_queue']);
 }
