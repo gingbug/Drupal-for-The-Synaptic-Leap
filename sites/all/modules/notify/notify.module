@@ -163,6 +163,7 @@ function notify_user_insert(&$edit, $account, $category) {
       'node' => 1,
       'teasers' => 0,
       'comment' => 0,
+      'send_last' => 0,
     ))
   ->execute();
     $edit['notify_decision'] = NULL;
@@ -305,7 +306,8 @@ function notify_user_settings_form($form, &$form_state, $arg) {
   }
 
   //$result = db_query('SELECT u.uid, u.name, u.mail, n.status, n.node, n.teasers, n.comment FROM {users} u LEFT JOIN {notify} n ON u.uid = n.uid WHERE u.uid = :u.uid AND u.status = :u.status', array(':u.uid' => $account->uid, ':u.status' => '1'));
-  $result = db_query('SELECT u.uid, u.name, u.mail, n.status, n.node, n.teasers, n.comment FROM {users} u LEFT JOIN {notify} n ON u.uid = n.uid WHERE u.uid = :uuid AND u.status = :ustatus', array(':uuid' => $account->uid, ':ustatus' => '1'));
+  //$result = db_query('SELECT u.uid, u.name, u.mail, n.status, n.node, n.teasers, n.comment FROM {users} u LEFT JOIN {notify} n ON u.uid = n.uid WHERE u.uid = :uuid AND u.status = :ustatus', array(':uuid' => $account->uid, ':ustatus' => '1'));
+  $result = db_query('SELECT u.uid, u.name, u.mail, n.status, n.node, n.teasers, n.comment, n.send_last FROM {users} u LEFT JOIN {notify} n ON u.uid = n.uid WHERE u.uid = :uuid AND u.status = :ustatus', array(':uuid' => $account->uid, ':ustatus' => 1));
   // D7: db_fetch_object() replaced by fetchObject()
   //$notify = db_fetch_object($result);
   $notify = $result->fetchObject();
@@ -350,6 +352,11 @@ function notify_user_settings_form($form, &$form_state, $arg) {
     '#default_value' => $notify->comment,
     '#options' => array(t('Disabled'), t('Enabled')),
     '#description' => t('Include new comments in the notification mail.'),
+  );
+  $form['notify_send_last'] = array('#type' => 'markup',
+    '#title' => t('Notify last send'),
+    '#description' => t('The date of the last notification for this user.'),
+    '#value' => t('Last Send: !date', array('!date' => $notify->send_last > 0 ? date('n/j/y g:i a', $notify->send_last) : "never")),
   );
   $form['uid'] = array(
     '#type' => 'value',
@@ -429,6 +436,10 @@ function notify_admin_users($form, &$form_state) {
       '#size' => 2,
       '#default_value' => $notify->attempts ? intval($notify->attempts) : 0,
     );
+    $form['users'][$notify->uid]['send_last'] = array(
+      '#type' => 'markup',
+      '#value' => $notify->send_last > 0 ? date('n/j/y g:i a', $notify->send_last) : "never",
+    );
   }
 
   $form['flush'] = array(
@@ -492,7 +503,7 @@ function notify_admin_users_submit($form, &$form_state) {
 function theme_notify_admin_users($variables) {
   $form = $variables['form'];
   $output = drupal_render($form['info']);
-  $header = array(t('Username'), t('E-mail address'), t('Content'), t('Teasers'), t('Comment'), t('Failed attempts'));
+  $header = array(t('Username'), t('E-mail address'), t('Content'), t('Teasers'), t('Comment'), t('Failed attempts'), t('Last Send'));
 
   $rows = array();
   foreach (element_children($form['users']) as $uid) {
@@ -657,6 +668,23 @@ function _notify_send($send_start = NULL) {
 
     //while ($user = db_fetch_object($uresult)) {
     foreach ($uresult as $user) {
+      // check to see if the send_last for this user is > the global
+      // notify send_last setting. if so, this indicates cron was aborted
+      // for taking too long and that this user should be considered done.
+      // technically, we should look for new updates since then, but since
+      // cron isn't finishing in time, it's better to let it continue to the
+      // rest of the users.
+      $notify_send_last = variable_get('notify_send_last', 0);
+      if (!empty($user->send_last) && $notify_send_last <= $user->send_last) {
+        // enable this if you want lots of debug messages confirming it's
+        // doing the right thing
+        /*
+        watchdog('notify', 'Skipping user %name (%mail), was already done at !send_last and global notify is earlier (!notify_send_last)',
+	  array('%name'=> $user->name, '%mail' => $user->mail, '!send_last' => date('n/j/y g:i a', $user->send_last), '!notify_send_last' => date('n/j/y g:i a', $notify_send_last)), WATCHDOG_INFO);
+        */
+        continue;
+      }
+
       // Switch current user to this account to use node_access functions, etc.
       _notify_switch_user($user->uid);
 
@@ -675,10 +703,6 @@ function _notify_send($send_start = NULL) {
           }
 
           // @TODO: Add functionality to hook into moderation modules?
-          /*if ($node->moderate == 1) {
-            $status = t('Queued');
-          }
-          elseif ($node->status == 1) {*/
           if ($node->status == 1) {
             $status = t('Published');
           }
@@ -713,7 +737,7 @@ function _notify_send($send_start = NULL) {
             $node = node_load($nid);
           }
           else {
-            $node = $node[$nid];
+            $node = $nodes[$nid];
           }
 
           // Don't show comments if we're not allowed to view this node.
@@ -733,22 +757,13 @@ function _notify_send($send_start = NULL) {
               $status = $c->status == COMMENT_PUBLISHED ? t('Published') : t('Unpublished');
               $status = " [$status]";
             }
-            /*$comment_body .= '   ' . ++$comment_count . '.' . t('!status !title by !author',
+            $comment_body .= '   ' . ++$comment_count . '.' . t('!status !title by !author',
                                                               array(
               '!status' => $status,
               '!title' => $c->subject,
-              '!author' => ($c->name ? $c->name : variable_get('anonymous', 'Anonymous')),*/
-            $comment_body .= '   ' . ++$comment_count . '.' . t('!status !title by !author', array(
-              '!status' => $status, '!title' => $c->subject, '!author' => ($c->name ? $c->name : variable_get('anonymous', 'Anonymous')),
+              '!author' => ($c->name ? $c->name : variable_get('anonymous', 'Anonymous')),
             )) . "\n"
               . '     ' . url('node/' . $nid, array('fragment' => 'comment-' . $c->cid, 'absolute' => TRUE)) . "\n\n";
-              
-            /* @TODO - some people may not want comment body in the email, so make it an option instead of always included */
-            $comment_loaded = comment_load($c->cid);
-            if (isset($comment_loaded->comment_body[$comment_loaded->language][0]['value'])) {
-              $format = $comment_loaded->comment_body[$comment_loaded->language][0]['format'];
-              $comment_body .= drupal_html_to_text(check_markup($comment_loaded->comment_body[$comment_loaded->language][0]['value'], $format, $comment_loaded->language, FALSE)) . "\n\n" ;
-            }
             $total_comment_count++;
           }
         }
@@ -772,20 +787,18 @@ function _notify_send($send_start = NULL) {
           // TODO Please review the conversion of this statement to the D7 database API syntax.
           /* db_query('UPDATE {notify} SET attempts = attempts + 1 WHERE uid = %d', $user->uid) */
           db_update('notify')
-/*  ->fields(array(
+  ->fields(array(
             'attempts' => attempts + 1,
           ))
   ->condition('uid', $user->uid)
-  ->execute();*/
-          ->expression('attempts', 'attempts + 1')
-          ->condition('uid', $user->uid)
-          ->execute();
+  ->execute();
           watchdog('notify', 'User %name (%mail) could not be notified. Mail error.', array('%name' => $user->name, '%mail' => $user->mail), WATCHDOG_ERROR);
         }
         else {
           $num_sent++;
           watchdog('notify', 'User %name (%mail) notified successfully.', array('%name' => $user->name, '%mail' => $user->mail), WATCHDOG_INFO);
         }
+        db_query('UPDATE {notify} SET send_last = UNIX_TIMESTAMP(NOW()) WHERE uid = :uuid', array(':uuid' => $user->uid));
       }
     }
   }

@@ -54,11 +54,20 @@ function notify_schema() {
         'default' => 0,
         'disp-width' => '4',
       ),
+      'send_last' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
     ),
     'primary key' => array('uid'),
   );
 
   return $schema;
+}
+
+function notify_update_7000() {
+  db_add_field('notify', 'send_last', array('type' => 'int', 'not null' => TRUE, 'default' => 0));
 }
 
 /**
