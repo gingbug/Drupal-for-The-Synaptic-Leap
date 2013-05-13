@@ -1156,3 +1156,13 @@ function notify_comment_insert($comment) {
     db_query('INSERT INTO {notify_unpublished_comments_queue} (cid, nid) VALUES (:cid, :nid)', array(':cid' => $comment->cid, ':nid' => $comment->nid));
   }
 }
+
+/**
+ * Implementation of hook_comment_delete().
+ *
+ * Delete the unpublished comment in the queue when the
+ * comment itself is deleted.
+ */
+function notify_comment_delete($comment) {
+  db_query('DELETE FROM {notify_unpublished_comments_queue} WHERE cid = :cid', array(':cid' => $comment->cid));
+}
