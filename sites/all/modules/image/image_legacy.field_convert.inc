@@ -243,6 +243,7 @@ function image_legacy_field_convert_object_pre_load($id, $plan) {
           'fid' => $new_fid,
         ))
         ->condition('nid', $nid)
+        ->condition('image_size', '_original')
         ->execute();      
     }
     else {
